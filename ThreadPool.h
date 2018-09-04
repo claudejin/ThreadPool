@@ -9,24 +9,42 @@
 #include <future>				// std::future, std::packaged_task
 #include <functional>			// std::bind
 #include <stdexcept>			// std::runtime_error
+#include <algorithm>			// std::max
 
 class ThreadPool {
 public:
-	ThreadPool(size_t);
+	ThreadPool(size_t poolSize = (std::max)(2u, std::thread::hardware_concurrency()));
+	~ThreadPool();
+
 	template<class F, class... Args>
 	auto enqueue(F&& f, Args&&... args)
 		->std::future<typename std::result_of<F(Args...)>::type>;
-	~ThreadPool();
+	void clearTask();
+	void waitUntilQueueEmpty();
+
+	size_t getSize();
+	void setSize(size_t limit);
+	size_t getNumAvailable();
+	void waitUntilAllIdle();
+
 private:
-	// need to keep track of threads so we can join them
+	void emplace_back_worker(std::size_t worker_number);
+
+	std::size_t pool_size;
+	std::atomic<std::size_t> running;
+	
 	std::vector< std::thread > workers;
-	// the task queue
 	std::queue< std::function<void()> > tasks;
 
 	// synchronization
-	std::mutex queue_mutex;
-	std::condition_variable condition;
+	std::condition_variable condition_consumers;
+	std::condition_variable condition_task_update;
+	std::condition_variable condition_worker_update;
+
+	std::mutex mutex_task;
+	std::mutex mutex_worker;
 	bool stop;
+	bool cleared;
 };
 
 // add new work item to the pool
@@ -42,14 +60,15 @@ auto ThreadPool::enqueue(F&& f, Args&&... args)
 
 	std::future<return_type> res = task->get_future();
 	{
-		std::unique_lock<std::mutex> lock(queue_mutex);
+		std::unique_lock<std::mutex> lock(mutex_task);
 
 		// don't allow enqueueing after stopping the pool
 		if (stop)
 			throw std::runtime_error("enqueue on stopped ThreadPool");
 
-		tasks.emplace([task](){ (*task)(); });
+		tasks.emplace([this,task](){ if (!this->cleared) (*task)(); });
 	}
-	condition.notify_one();
+	
+	condition_consumers.notify_one();
 	return res;
 }
