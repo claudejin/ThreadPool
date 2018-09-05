@@ -32,7 +32,7 @@ private:
 
 	std::size_t pool_size;
 	std::atomic<std::size_t> running;
-	
+
 	std::vector< std::thread > workers;
 	std::queue< std::function<void()> > tasks;
 
@@ -66,9 +66,9 @@ auto ThreadPool::enqueue(F&& f, Args&&... args)
 		if (stop)
 			throw std::runtime_error("enqueue on stopped ThreadPool");
 
-		tasks.emplace([this,task](){ if (!this->cleared) (*task)(); });
+		tasks.emplace([this, task](){ if (!this->cleared) (*task)(); });
 	}
-	
+
 	condition_consumers.notify_one();
 	return res;
 }

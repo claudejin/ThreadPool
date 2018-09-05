@@ -4,6 +4,7 @@ ThreadPool::ThreadPool(size_t poolSize)
 	: pool_size(poolSize)
 	, running(0)
 	, stop(false)
+	, cleared(false)
 {
 	workers.reserve(poolSize);
 
@@ -27,8 +28,10 @@ void ThreadPool::clearTask()
 {
 	std::unique_lock<std::mutex> lock(this->mutex_task);
 
+	cleared = true;
 	while (tasks.size() > 0)
 		tasks.pop();
+	cleared = false;
 
 	condition_task_update.notify_all();
 }
